@@ -1,0 +1,375 @@
+---
+title: "CHAVA_SAI_VIVEK_INTERPRETATION"
+author: "Sai Vivek Chava"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, load_tidyverse}
+library(tidyverse, tidymodels)
+library(caret)
+```
+
+```{r, read_final_data}
+df <- readr::read_csv("paint_project_train_data.csv", col_names = TRUE, show_col_types = F)
+df %>% glimpse()
+```
+
+
+```{r, make_reg_data}
+dfii <- df %>% 
+  mutate(y = boot::logit( (response - 0) / (100 - 0) ) ) %>% 
+  select(R, G, B, 
+         Lightness, Saturation, Hue,
+         y, outcome)
+
+dfii %>% glimpse()
+```
+```{r, standardaize}
+cols_num <- c("R", "G", "B", "Hue")
+var_mean <- as.vector(apply(df[,cols_num], 2, mean))
+var_sd <- as.vector(apply(df[,cols_num], 2, sd))
+df_stan  <- df[,cols_num] %>% scale(center = var_mean, scale = var_sd) %>%
+  as.data.frame() %>% tibble::as_tibble() %>% bind_cols(dfii[,c('Lightness', 'Saturation', 'y')])
+
+df_stan %>% glimpse()
+```
+
+
+**With the model training completed, you can now answer meaningful questions associated with the data!**
+
+
+**You must identify the best regression model and the best classification model.**
+
+##### Classification:
+
+Based on the ROC curve of the tuned models, it's observed that `RF` seems to performing well initially followed closely by `XGB` which was later preceeded by `XGB` as it got closer to 1 and it stayed the overall best as seen from the dot plot of the tuned models. 
+
+When tested on the test set, `XGB` seemed to perform better overall. As visualised for the test set, the data is heaviliy imbalanced and the model seemed to perform better when we look at the F1 score and Accuracy. 
+
+The model formula is **y ~ R+G+B+Hue+Lightness+Saturation**
+
+So, based on the observation, we can tell that `XGB` seemed to perform better overall is considered the best model.
+
+
+##### Regression
+
+Based on the training set performance, it is observed that `XGB` seems to perform better followed by the `MARS` in terms of MSE, MAE and R-squared and closely followed by `lm_cat_interaction`. 
+
+When tested on the test set, `lm_cat_interaction` seemed to perform better with the leasr `MSE` and `RMSE` scores followed by `XGB`. 
+
+As the difference between the training set performance and test set performance is not much, so, considering `lm_cat_interaction` as best. 
+
+The model formula is **y~ Saturation*(R+G+B+Hue)+ Lightness *(R+G+B+Hue)**
+
+**Identify the most important variables associated with your best performing models.**
+
+#### Classification Model
+
+
+```{r, load_best_cls_mod}
+best_cls_mod <- readr::read_rds("cls_mod_8.rds")
+plot(varImp(best_cls_mod))
+```
+
+Per the variable importance observed from the plot above, `Hue` has the most importance followed by the `Saturation, Blue`. `G, R` has almost equal importance.
+
+It can be interpreted as `HSL1` model hs importance in deciding the outcome for classification model.
+
+#### Regression Model
+
+```{r, load_best_reg_mod}
+best_reg_mod <- readr::read_rds("reg_mod_3.rds")
+plot(varImp(best_reg_mod))
+```
+
+Per the plot above, it can be observed that, `G` is the most important variable followed by `R` and Levels of Lightness and it's interaction with G and B. 
+
+It can be interpreted that RGB model has impact on the response variable.
+
+
+**Are the most important variables similar for the regression and classification tasks?**
+
+No, the important variable are different for each task. 
+
+**Does one of the color model INPUTS “dominate” the other variables**
+
+As can be interpreted from the variable importance of the corresponding best models, and other models with decent predictions, Classifying outcome is potentially impacted by the `HSL` model and the regression of response is impacted by the `RGB` model.
+
+
+**Does one of the color model INPUTS appear to be not helpful at all?**
+
+There was no one color model input that is not helpful. As observed through the performance of the models created, Each and every model has inputs importance based on the model formula. But it is also observed that not all saturation levels are that important for most of the classification and regression tasks.
+
+
+**Based on your modeling results, do you feel the color model INPUTS alone help identify POPULAR paints????**
+
+Despite the fact that there seem to be a direct relationship between color models and outcomes in most of the cases, there seem to be somthing that's a miss in the model. So, it can be said that the color model inputs alone won't help us predict the popular paints.
+
+### Input Insights
+
+
+**You must drill down further to gain additional insights into the patterns of the data!**
+
+
+**You must identify the combinations of Lightness and Saturation**
+
+
+#### Visualizing the tougher customers
+
+```{r, viz_tough_class}
+df %>%
+  select(Lightness, Saturation) %>%
+  mutate(row_index = 1:nrow(.)) %>%
+  inner_join(best_cls_mod$pred, by = c("row_index" = "rowIndex")) %>%
+  select(
+    Lightness,
+    Saturation,
+    pred,
+    obs,
+    event,
+    non_event
+  ) %>%
+  group_by(Lightness, Saturation) %>%
+  summarise(
+    acc = sum(ifelse(obs == pred, 1, 0)) / n(),
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(acc)) %>%
+  ggplot(mapping = aes(x = interaction(Lightness, Saturation, sep = "_"), y = acc, fill = Saturation)) +
+  geom_col(position = "dodge") +
+  ggtitle("Top classification model: Lightness and Saturation accuracy")+
+  theme(axis.text.x = element_text(angle = 45))
+
+```
+```{r, viz_tough_cus}
+dfii %>%
+  select(Lightness, Saturation) %>%
+  mutate(row_index = 1:nrow(.)) %>%
+  inner_join(best_reg_mod$pred, by = c("row_index" = "rowIndex")) %>%
+  select(
+    Lightness,
+    Saturation,
+    pred,
+    obs
+  ) %>%
+  group_by(Lightness, Saturation) %>%
+  summarise(
+    rmse = caret::RMSE(pred, obs),
+    .groups = 'drop'
+  ) %>%
+  arrange(rmse) %>%
+  ggplot(mapping = aes(x = interaction(Lightness, Saturation, sep = "_"), y = rmse, fill = Saturation)) +
+  geom_col(position = "dodge") +
+  ggtitle("Top regression model: per-customer RMSE") +
+  theme(axis.text.x = element_text(angle = 45))
+
+
+```
+
+**That appear to be the HARDEST to predict in the regression and classification tasks**
+
+
+Based on the plot above, The combinations of Lightness and Saturation
+
+> In Classifiction:
+- The hardest to predict combinations are `Saturated - gray`, `light - shaded`.
+> In Regression:
+- The hardest to predict comninations are `Saturated - pure` and `light - gray`, `dark - subdued`. 
+
+**That appear to be the EASIEST to predict in the regression and classification tasks**
+
+Based on the plot above, The combinations of Lightness and Saturation
+
+
+> In Classifiction:
+- The easiest to predict combinations are `Saturated - pure` , `Deep - pure`, `midtone - muted`, `light - bright, pale - bright`
+> In Regression:
+- The easiest to predict comninations are `light - shaded`, `dark - muted, midtone - bright`. 
+
+
+```{r, df_hold_out}
+df_holdout <-readr::read_csv("paint_project_holdout_data.csv", 
+                             col_names = T,show_col_types = FALSE)
+
+reg_preds <- predict(best_reg_mod, newdata = df_holdout)
+cls_preds <- predict(best_cls_mod, newdata = df_holdout)
+
+df_pred <- tibble::tibble( y = predict(best_reg_mod, newdata = df_holdout),
+                            outcome = predict(best_cls_mod, newdata = df_holdout)) %>% 
+  bind_cols(predict(best_cls_mod, newdata = df_holdout, type = 'prob') %>% 
+      select(probability = event)) %>% 
+  tibble::rowid_to_column('id') 
+
+df_pred %>%readr::write_csv("df_final_preds.csv")
+```
+
+```{r, pred_results}
+df_shiny_metrics <- read.csv("metrics.csv")
+df_shiny_metrics
+```
+
+
+
+### Prediction Insights
+
+```{r}
+results <- cbind(df_holdout, reg_preds, cls_preds)
+
+# Identify the combinations of Lightness and Saturation that are the hardest and easiest to predict
+hardest_to_predict <- results %>% arrange(desc(cls_preds)) %>% head(10)
+easiest_to_predict <- results %>% arrange(cls_preds) %>% head(10)
+
+# Visualize trends using scatter plots
+library(ggplot2)
+
+# Hardest to predict
+ggplot(hardest_to_predict, aes(x = R, y = G, color = Lightness, shape = Saturation)) +
+  geom_point(size=4) +
+  ggtitle("Hardest to Predict: Trends in X1 and X2")
+```
+
+
+**You must visualize the trends associated with the HARDEST and EASIEST to predict Lightness and Saturation combinations with respect to the TWO most important continuous inputs. **
+
+
+**You must visualize your predictive trends as a SURFACE plot using the following style: **
+> The primary continuous input should be used as the x aesthetic in a graphic
+
+> The secondary continuous input should be used the y aesthetic in the graphic.
+
+> You must use 101 unique values for both the x and y aesthetics.
+
+> You must use geom_raster to create the surface plot.
+
+> The fill aesthetic of geom_raster must be set to the LOGIT transformed response for the regression predictions andthe EVENT probability for the classification predictions.
+
+
+**You must make the surface plot for the hardest to predict Lightness and Saturation combinations and again for the easiest to predict Lightness and Saturation combinations. Thus you must make 2 surface plots for the best performing regression model and 2 surface plots for the best performing classification model.**
+
+
+```{r}
+viz_reg_hard <- expand.grid(R = seq(min(df$R), max(df$R), length.out = 101),
+                            G = seq(min(df$G), max(df$G), length.out = 101),
+                            B = 0,
+                            Hue = 0,
+                            Lightness = c("pale"),
+                            Saturation = c("shaded"),
+                            KEEP.OUT.ATTRS = FALSE,
+                            stringsAsFactors = FALSE) %>% 
+  as.data.frame() %>% tibble::as_tibble()
+
+viz_reg_hard %>% glimpse()
+```
+```{r}
+pred_reg_hard <- best_reg_mod %>% predict(newdata = viz_reg_hard)
+pred_reg_hard %>% summary()
+```
+
+```{r}
+viz_reg_hard %>% mutate(mu = pred_reg_hard) %>%
+  ggplot(mapping = aes(x = G, y = R, fill = mu)) +
+  geom_raster() +
+  facet_wrap(~Lightness + Saturation) +
+  scale_fill_viridis_c()
+```
+
+```{r}
+viz_reg_easy <- expand.grid(R = seq(min(df$R), max(df$R), length.out = 101),
+                            G = seq(min(df$G), max(df$G), length.out = 101),
+                            B = 0,
+                            Hue = 0,
+                            Lightness = c("dark"),
+                            Saturation = c("subdued"),
+                            KEEP.OUT.ATTRS = FALSE,
+                            stringsAsFactors = FALSE) %>% 
+  as.data.frame() %>% tibble::as_tibble()
+
+viz_reg_easy %>% glimpse()
+```
+
+```{r}
+pred_reg_easy <- best_reg_mod %>% predict(newdata = viz_reg_easy)
+pred_reg_easy %>% summary()
+```
+
+```{r}
+viz_reg_easy %>% mutate(mu = pred_reg_easy) %>%
+  ggplot(mapping = aes(x = G, y = R, fill = mu)) +
+  geom_raster() +
+  facet_wrap(~Lightness + Saturation) +
+  scale_fill_viridis_c()
+```
+
+```{r}
+viz_cls_tough <- expand.grid(R = 0,
+                            G = seq(min(df$G), max(df$G), length.out = 101),
+                            B = seq(min(df$B), max(df$B), length.out = 101),
+                            Hue = 0,
+                            Lightness = c("light"),
+                            Saturation = c("shaded"),
+                            KEEP.OUT.ATTRS = FALSE,
+                            stringsAsFactors = FALSE) %>% 
+  as.data.frame() %>% tibble::as_tibble()
+
+viz_cls_tough %>% glimpse()
+```
+
+```{r}
+pred_cls_tough <- best_cls_mod %>% predict(newdata = viz_cls_tough, type = "prob")
+pred_cls_tough %>% summary()
+
+```
+
+```{r}
+viz_cls_tough %>% mutate(mu = pred_cls_tough$event) %>%
+  ggplot(mapping = aes(x = G, y = B, fill = mu)) +
+  geom_raster() +
+  facet_wrap(~Lightness + Saturation) +
+  scale_fill_viridis_c()
+
+```
+
+
+```{r}
+viz_cls_easy <- expand.grid(R = 0,
+                            G = seq(min(df$G), max(df$G), length.out = 101),
+                            B = seq(min(df$B), max(df$B), length.out = 101),
+                            Hue = 0,
+                            Lightness = c("saturated"),
+                            Saturation = c("pure"),
+                            KEEP.OUT.ATTRS = FALSE,
+                            stringsAsFactors = FALSE) %>% 
+  as.data.frame() %>% tibble::as_tibble()
+
+viz_cls_easy %>% glimpse()
+```
+
+```{r}
+pred_cls_easy <- best_cls_mod %>% predict(newdata = viz_cls_easy, type = "prob")
+pred_cls_easy %>% summary()
+```
+
+```{r}
+viz_cls_easy %>% mutate(mu = pred_cls_easy$event) %>%
+  ggplot(mapping = aes(x = G, y = B, fill = mu)) +
+  geom_raster() +
+  facet_wrap(~Lightness + Saturation) +
+  scale_fill_viridis_c()
+```
+
+
+
+**What conclusions can draw from your surface plots?**
+
+The primary and secondary continuous input variables have a nonlinear relationship. There is a higher likelihood that the response variable will be high when the primary and secondary continuous input variables are both high. Due to the surface plot's upward x and y slope, a higher value of any input variable corresponds to a higher chance that the response variable will be high. When either x or y is low, the dependent variable is unlikely to be high, even if the other independent variable is high. The surface plot's decreasing slope in the vicinity of the plot's margins makes this clear.
+
+
+**Are the trends associated with the HARDEST to predict combinations different from the trends associated with the EASIEST to prediction combinations?**
+
+Yes, in general the lightness category- light is tougher to predict among the others for the regression model. Similarly for classification the saturation category - shaded is tougher to predict and bright is easier to predict.

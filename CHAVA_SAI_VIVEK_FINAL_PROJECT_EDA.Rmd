@@ -1,0 +1,496 @@
+---
+title: "PPG Paint Colors: Final Project EDA"
+author: "Sai Vivek Chava"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, load_tidyverse}
+library(tidyverse, tidymodels)
+
+```
+
+```{r, read_final_data}
+df <- readr::read_csv("paint_project_train_data.csv", col_names = TRUE, show_col_types = F)
+df %>% glimpse()
+```
+
+
+```{r, make_reg_data}
+dfii <- df %>% 
+  mutate(y = boot::logit( (response - 0) / (100 - 0) ) ) %>% 
+  select(R, G, B, 
+         Lightness, Saturation, Hue,
+         y, outcome)
+
+dfii %>% glimpse()
+```
+# Exploration
+
+#### Visualizing Null values in the dataframe
+
+```{r}
+visdat::vis_miss(dfii)
+```
+
+
+#### Visualizing the data types
+```{r}
+visdat::vis_dat(dfii)
+```
+
+#### Minimum and Maximum values in the tibble
+
+```{r}
+cat("Minimum R:", min(dfii$R), " | Minimum G:", min(dfii$G), " | Minimum B:", min(dfii$B), "\n")
+cat("Maximum R:", max(dfii$R), " | Maximum G:", max(dfii$G), " | Maximum B:", max(dfii$B))
+
+```
+
+#### Histogram of the response variable to see the distribution
+
+```{r}
+df %>% ggplot(mapping = aes(x=response)) +geom_histogram(bins=30)
+```
+
+The  histogram of the response variable is not normally distributed. 
+
+```{r}
+df %>% ggplot(aes(x=outcome)) + geom_bar()
+```
+
+
+```{r}
+df %>% ggplot(aes(Lightness)) + geom_bar() +xlab('')
+```
+
+The distribution of the levels of saturation is almost evenly distributed across the tibble.
+
+
+```{r}
+df %>% ggplot(aes(Saturation)) + geom_bar() +xlab('')
+```
+
+The distribution of the levels in the saturation is allright.
+
+
+#### Converting the data to longformat
+
+```{r, make_longformat_1}
+lf <- dfii %>% 
+  tibble::rowid_to_column() %>% 
+  pivot_longer(c(R, G, B, Hue, y))
+lf %>% glimpse()
+```
+#### Histogram of the numerical columns with corresponding to the outcome
+
+```{r, eda_1}
+lf %>% ggplot(mapping= aes(x = value, fill=as.factor(outcome))) +geom_histogram(bins = 20) + facet_wrap(~name, scales = 'free') +
+  theme_minimal()
+```
+
+The distributions seems to be almost similar and heavily skewed towards right for the RGB model. The distribution of event and non-events are also heavily imbalanced.
+
+The distribution of Hue is different from the RGB model, which clearly shows that it's not at all correlated.
+
+
+#### Scatter plot of the numerical columns with respect to outcome
+
+```{r}
+dfii %>% tibble::rowid_to_column() %>% pivot_longer(c(R, G, B, Hue)) %>% 
+  ggplot(mapping = aes(x=value,y=y, color=outcome, group=outcome)) +
+  geom_smooth(formula = 'y~x', method ='lm')+ 
+  geom_point() + facet_wrap(~name, scales = 'free')
+```
+
+There seems to be a strong positive correlation between the response variable and the Green color. The relationship between the Response and the colors Red and Blue is not as strong as Green but considerable. The regression lines of the event and non-event are parallel across RGB models. So, linear separation is not possible. 
+
+The plot between Hue and response variable is kind of linear and there's no specific pattern associated with it.
+
+
+```{r}
+#df %>% tibble::rowid_to_column() %>% pivot_longer(c(R, G, B))
+lf %>% ggplot(mapping = aes(x=value,y=outcome)) +
+  geom_smooth(formula = 'y~x', method ='glm')+ 
+  geom_point() + facet_wrap(~name, scales = 'free')
+```
+
+This plot confirms the inference from the above scatter plot. The event and non-events are distributed similarly 
+
+
+#### Boxplot for the saturation faceted by the numerical columns corresponding to the outcome
+
+```{r}
+lf %>% ggplot(mapping = aes(x = Saturation, y = value)) +
+  geom_boxplot(mapping = aes(fill = as.factor(outcome), color = as.factor(outcome)), alpha = 0.35) +
+  facet_grid(name ~ ., scales = "free_y") +
+  theme_bw()
+```
+
+
+As we can see, All of the RBG models corresponding to the Saturation variations have median values close to 150 with some potential outliers.This indicates that the colors are relatively bright and intense.The median values are shifting based on the type of saturation, for example, the bright models have pretty high median values compared to that of gray, shaded or subdues. Therefore we can say that there is some dependency between the type of saturation and RGB models.
+
+The average median across all the variations of saturation is similar, so we are not able to find any definitive direct relation between them with this approach. It's also the same for response. 
+
+
+#### Boxplot for the Lightness faceted by the numerical columns corresponding to the outcome
+
+```{r}
+lf %>% ggplot(mapping = aes(x = Lightness, y = value)) +
+  geom_boxplot(mapping = aes(fill = as.factor(outcome), color = as.factor(outcome)), alpha = 0.35) +
+  facet_grid(name ~ ., scales = "free_y") +
+  theme_bw()
+```
+
+If we observe from the plot above, as the intensity of the color increases as per the lightness, the RBG values are getting smaller. The lighter versions have relatively larger values of RBG. We can say that the lightness does have correlation with RBG models.
+
+The response variable seems skewed for mid-lighter versions of the colors. Darker colors are less preferred as per the plot above. 
+
+The relation ship between hue and lightness cannot be determined with this approach either.
+
+
+
+
+```{r}
+lf %>% ggplot(mapping = aes(x=value,y=outcome)) +
+  geom_smooth(formula = 'y~x*I(x^2)', method ='glm')+ 
+  geom_point() + facet_wrap(~name, scales = 'free')
+
+```
+
+In this plot the relationship between Green and Outcome appears more consistent. The others are not as consistent as seen in the linear relationship plot.
+
+#### Normality Diagonosis plot
+
+```{r}
+num_col <- dfii %>% select(-outcome, -Lightness, -Saturation)
+options(dlookr_offline=F)
+dlookr::plot_normality(num_col)
+```
+
+If we observe the distribution of Q-Q plot for the RGB above, we can see that the variation for R, G, B values occurs below 100. The values for R are closer to the regression line but mostly below the line. The values for G is distributed around 50s and the values for B are distributed at around 100s. But as the values increases, the distribution is almost similar for all the three colors. This is obvious with the fact that as the intensity of one color increases, the shift corresponds to that color. 
+
+Apart from that the log and square root transformations were able to transform the data and helps identifying the skewness in the data. 
+
+#### Scatter plot to visualize the distribution of HSL model  and response variable
+
+```{r}
+dfii %>%
+  tibble::rowid_to_column() %>%
+  pivot_longer(cols = c( Hue, y)) %>%
+  ggplot(mapping = aes(x = Lightness, y = value, color=Saturation )) +
+  geom_smooth(formula = 'y~x', method = 'lm') +
+  geom_point()+
+  facet_wrap(~name, scales = 'free')+
+   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+The above plot is plotted to observe the trends in the data. It's clearly evident that individual color does not have impact on the outcome. The resultant mix of the three colors impacts the response.
+
+
+```{r}
+dfii %>% tibble::rowid_to_column() %>%
+  ggplot(mapping = aes(x=G, y=B, color=R, shape=Lightness)) + geom_point() +
+  scale_color_viridis_c() + 
+  scale_shape_manual(values = c(16, 17, 18, 19, 20, 21, 22)) +
+  facet_wrap(~Saturation, scales = 'free') + theme_minimal()
+```
+
+The above plot is based on the observation that the feature columns G and B effectively has more impact on the overall response. And as faceted based on the saturation, and scaled with features R, Lightness, we are able to effectively visualize the distribution of each feature based on their lightness type and Saturation.
+
+We can see that the lighter levels ` pale, saturated,light,  soft`  always has higher values with mostly situated towards the top-right corner. The darker levels such as ` dark, deep ` are at the left- bottom part of the plot. Ther darker the color, the lesser the values of Red and the lighter the color, the larger the values of Red. 
+
+
+
+```{r}
+
+dfii %>% 
+  select(R, G, B, Hue, y) %>%
+  cor() %>%
+  corrplot::corrplot.mixed(
+    # method = 'color',
+    order = 'AOE',
+    tl.col = 'black',
+    tl.pos = 'lt' 
+  )
+
+```
+
+
+
+```{r}
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...) {
+  usr <- par("usr")
+  on.exit(par(usr))
+  par(usr = c(0, 1, 0, 1))
+
+  r <- cor(x, y)
+  txt <- format(c(r, 0.123456789), digits = digits)[1]
+
+  if (missing(cex.cor)) cex.cor <- 0.3/strwidth(txt)
+
+  text(0.5, 0.5, paste0(prefix, txt), cex = cex.cor, col = "blue", font = 2)
+}
+```
+
+
+#### Pairs plot corresponding to Lightness and Saturation
+
+```{r}
+
+suppressWarnings({
+  dfii %>% 
+    select(-outcome, -Saturation, -Lightness) %>%
+    pairs(
+      # col = as.factor(dfii$Lightness),
+      upper.panel = panel.cor,
+      main = "Pairs Plot with Lightness Coloring"
+    )
+  # legend("right", legend = levels(as.factor(dfii$Lightness)), fill = palette())
+})
+
+
+```
+
+```{r}
+
+suppressWarnings({
+  dfii %>% 
+    select(-outcome, -Saturation, -Lightness) %>%
+    pairs(
+      col = as.factor(dfii$Lightness),
+      upper.panel = panel.cor,
+      main = "Pairs Plot with Lightness Coloring"
+    )
+  legend("right", legend = levels(as.factor(dfii$Lightness)), fill = palette())
+})
+
+
+```
+
+If we observe the plot above, dark colors has the lowest values which is being represented in black rings while the soft color has higher values. Irrespective of the level of lightness, it seems each level is stacked on top of one another like a leaning tower which is clearly evident by the names alone which are ordinal in nature.
+
+Though the Hue didn't seem to have any direct relation with the other color model, the plot above shows that it has direct imapact with the level of lightness. 
+
+
+```{r}
+suppressWarnings({
+  dfii %>% select(-outcome, -Saturation, -Lightness) %>%
+    pairs( col = as.factor(dfii$Saturation),
+      upper.panel = panel.cor,
+      main = "Pairs Plot with Saturation Coloring")
+  
+  # Add color legend
+  legend("right", legend = levels(as.factor(dfii$Saturation)), fill = palette())
+})
+
+```
+
+If we see the aqua marine color rings of pure saturation, it can be observed that for the R,G,B colors, it seems to be like a U curve on top of all the other levels of saturation. If we go by the ordinal order of the saturation levels, we can peel of each level from the stack except for Hue.
+
+
+
+
+** PCA analysis **
+
+```{r}
+df_features <- dfii %>% select(-y, -outcome, -Lightness, -Saturation)
+df_pca <- prcomp(df_features, center = T, scale.=T)
+df_pca %>% glimpse()
+```
+
+```{r}
+df_pca$x %>% dim()
+df_pca$x %>% colnames()
+```
+
+#### Box plot of the summary statistics for the interaction between PCs and Saturation/Lightness, Pcs gouped by the levels of Saturation, Lightness.
+```{r}
+df_pca$x %>% as.data.frame() %>% tibble::as_tibble() %>% 
+  tibble::rowid_to_column() %>% 
+  bind_cols(dfii %>% select(Lightness)) %>% 
+  pivot_longer(!c("rowid", "Lightness")) %>% 
+  mutate(pc_id = as.numeric(stringr::str_extract(name, "\\d+"))) %>% 
+  ggplot(mapping = aes(x = as.factor(pc_id), y = value)) +
+  geom_boxplot(mapping = aes(fill = Lightness, color = Lightness,
+                             group = interaction(pc_id, Lightness)),
+               alpha = 0.2) +
+  stat_summary(fun.data = "mean_se",
+               mapping = aes(group = interaction(pc_id, Lightness),
+                             color = Lightness),
+               fun.args = list(mult = 2),
+               position = position_dodge(0.75)) +
+  ggthemes::scale_color_calc() +
+  ggthemes::scale_fill_calc() +
+  theme_bw()
+```
+
+The above plot shows the box plot with summary statistics of PC components grouped by the levels of lightness. It is observed that there is a separation between the levels of lightness for the PC1 and the seem to be no overlap between the summary statics of the interaction between PC components-Saturation and PC components which means that the PC1 is associated with difference in the levels of Lightness. 
+
+This indicates that, the classification model fits well to train on the data based on the lightness levels.  
+
+
+```{r}
+df_pca$x %>% as.data.frame() %>% tibble::as_tibble() %>% 
+  tibble::rowid_to_column() %>% 
+  bind_cols(dfii %>% select(Saturation)) %>% 
+  pivot_longer(!c("rowid", "Saturation")) %>% 
+  mutate(pc_id = as.numeric(stringr::str_extract(name, "\\d+"))) %>% 
+  ggplot(mapping = aes(x = as.factor(pc_id), y = value)) +
+  geom_boxplot(mapping = aes(fill = Saturation, color = Saturation,
+                             group = interaction(pc_id, Saturation)),
+               alpha = 0.2) +
+  stat_summary(fun.data = "mean_se",
+               mapping = aes(group = interaction(pc_id, Saturation),
+                             color = Saturation),
+               fun.args = list(mult = 2),
+               position = position_dodge(0.75)) +
+  ggthemes::scale_color_calc() +
+  ggthemes::scale_fill_calc() +
+  theme_bw()
+```
+
+The above plot shows the box plot of PC components summary statistics grouped by the levels of saturation. As can be seen there is no distinct separation between the median levels per PC component against the levels of saturation as there is more overlapping. 
+
+It is also observed that, there is no overlap between the summary statistics of interaction between PC components-Saturation and PC components. It indicates that there is a separation on average between inputs and outputs.
+
+#### Box plot of the summary statistics for the interaction between PCs and outcome
+
+```{r}
+df_pca$x %>% as.data.frame() %>% tibble::as_tibble() %>% 
+  tibble::rowid_to_column() %>% 
+  bind_cols(dfii %>% select(outcome)) %>% 
+  pivot_longer(!c("rowid", "outcome")) %>% 
+  mutate(pc_id = as.numeric(stringr::str_extract(name, "\\d+"))) %>% 
+  ggplot(mapping = aes(x = as.factor(pc_id), y = value)) +
+  geom_boxplot(mapping = aes(fill = as.factor(outcome), color = as.factor(outcome),
+                             group = interaction(pc_id, outcome)),
+               alpha = 0.2) +
+  stat_summary(fun.data = "mean_se",
+               mapping = aes(group = interaction(pc_id, outcome),
+                             color = as.factor(outcome)),
+               fun.args = list(mult = 2),
+               position = position_dodge(0.75)) +
+  ggthemes::scale_color_calc() +
+  ggthemes::scale_fill_calc() +
+  theme_bw()
+```
+
+As can be seen there is no distinct separation between the median levels per PC component against the levels of Outcome as the median seems to be on similar levels. It is also observed that, there is no overlap between the summary statistics of interaction between PC components-outcome and PC components. This indicates that training the classifer model ca be effective.
+
+
+#### Contribution plot of each component
+
+```{r}
+factoextra::fviz_screeplot(df_pca, ncp=16, addlabels=T)
+```
+ 
+The above plot shows the contribution of each PC and how much proportion of the data is it efficiently capturing. 
+
+#### Variable factor Graph
+
+```{r}
+factoextra::fviz_pca_var(df_pca, col.var='contrib',labs='',
+                         gradient.cols = c("darkorange", "grey", 'navyblue'),
+                         repel = TRUE)
+```
+
+The above plot is to show the relationship between each variable and the PCs 1 and 2. As the similarity increases, the variable will be closer to the corresponding component. In the plot above, as we can see, the variable `Hue` is parallel to the `Dim1` in positive direction with it's length almost equals to the circumference of the circle which indicates that, it is more related to `PC1`. It is similar for `G` and `PC2`. 
+
+The color scale indicates the association between the PCs and variables.
+
+
+#### Contribution plot of variables
+
+```{r}
+factoextra::fviz_contrib(df_pca, choice='var', axes=1)
+```
+
+
+The plot above shows the contribution of each variable. The dashed line in the middle is the uniform contribution line which acts as a threshold. The more the lenght of the bar beyond the dashed line the more the contribution and in this case, `R,G,B` seems to have higher contributions respectively compared to the `Hue` variable.
+
+
+
+**BONUS DATA**
+
+```{r, bonus_data}
+df_bonus <- readr::read_csv('paint_project_bonus_data.csv', show_col_types=F, col_names = T) %>%
+  select(-challenge_outcome)
+df_total <- df_bonus %>% bind_rows(df)
+df_total %>% glimpse()
+```
+
+
+```{r}
+visdat::vis_dat(df_total)
+```
+
+```{r}
+df_total %>% ggplot(mapping = aes(x=Lightness)) + geom_bar() + theme_minimal()
+```
+
+```{r}
+df_total %>% ggplot(aes(x=Saturation)) + geom_bar()
+```
+
+```{r}
+lf_total <- df_total %>% tibble::rowid_to_column() %>% pivot_longer(c(R,G,B,Hue, response)) 
+lf_total %>% 
+  ggplot(aes(x=value)) + geom_histogram( bins=30)+ facet_wrap(~name, scales = 'free')
+```
+
+
+```{r}
+lf_total %>% ggplot(mapping= aes(x = value, fill=as.factor(outcome))) +geom_histogram(bins = 20) + facet_wrap(~name, scales = 'free') +
+  theme_minimal()
+```
+
+```{r}
+df_total %>% tibble::rowid_to_column() %>% pivot_longer(c(R, G, B, Hue)) %>% 
+  ggplot(mapping = aes(x=value,y=response, color=outcome, group=outcome)) +
+  geom_smooth(formula = 'y~x', method ='lm')+ 
+  geom_point() + facet_wrap(~name, scales = 'free')
+```
+
+```{r}
+df_total %>%
+  tibble::rowid_to_column() %>%
+  pivot_longer( c( Hue, response)) %>%
+  ggplot(mapping = aes(x = Lightness, y = value, color=Saturation )) +
+  geom_smooth(formula = 'y~x', method = 'lm') +
+  geom_point()+
+  facet_wrap(~name, scales = 'free')+
+   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+df_total %>% tibble::rowid_to_column() %>%
+  ggplot(mapping = aes(x=G, y=B, color=R, shape=Lightness)) + geom_point() +
+  scale_color_viridis_c() + 
+  scale_shape_manual(values = c(16, 17, 18, 19, 20, 21, 22)) +
+  facet_wrap(~Saturation, scales = 'free') + theme_minimal()
+
+```
+
+**PCA Analysis**
+
+```{r}
+df_tot_features <- df_total %>% select(-response, -outcome, -Lightness, -Saturation)
+df_tot_pca <- prcomp(df_features, center = T, scale.=T)
+df_tot_pca %>% glimpse()
+```
+
+```{r}
+
+```
+
+```{r}
+# apply(df_tot_pca$rotation^2, 2, sum)
+
+```
+
