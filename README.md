@@ -5,8 +5,8 @@
 This project applies a dual machine learning approach (Regression and Classification) to analyze and predict attributes within **PPG Industries'** proprietary paint color library. This work was conducted as a sponsored academic project, providing hands-on experience with real-world, commercial data science problems.
 
 The primary objectives were to:
-1.  **Build a Regression Model:** Accurately predict a key continuous color metric.
-2.  **Build a Classification Model:** Predict categorical color attributes (e.g., saturation) while systematically addressing significant data imbalance.
+1.  **Build a Regression Model:** Accurately predict `response` – a CONTINUOUS output associated with an important paint property
+2.  **Build a Classification Model:** Predict `outcome` – a BINARY output associated with the POPULARITY of the paint while systematically addressing significant data imbalance.
 
 ## Technical Stack
 
@@ -38,7 +38,7 @@ The **`lm_cat_interaction`** model was selected as the best overall regression m
 
 ## Task 2: Classification (Predicting Color Category)
 
-This task focused on predicting a categorical color attribute. The primary challenge was the **severe class imbalance** in the dataset.
+This task focused on predicting a categorical color attribute. The primary challenge was the **class imbalance** in the dataset.
 
 ### Imbalanced Data Strategy
 
